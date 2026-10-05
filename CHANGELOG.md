@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Codex is the primary agent (Windows, Linux)
+
+- Install Coucou's hooks into Codex from **Settings → Codex → Install hooks**. It backs up `~/.codex/hooks.json` (or `$CODEX_HOME/hooks.json`), merges its entries without touching your own hooks or `config.toml`, and shows the diff before writing anything. Run `/hooks` once in the Codex CLI to review and trust them.
+- The Codex pill is always present and leads the island, and Codex permission requests get the Allow / Deny card, exactly like Claude Code. Claude Code support is unchanged, from **Settings → Claude Code**.
+- The relay is the same `coucou-hook` binary, called with `--agent codex`; Codex reports shell commands as `Bash` and edits as `apply_patch`, and the island labels both.
+
+### Arch Linux
+
+- New `scripts/install-arch.sh`: installs the pacman dependencies, builds the app and the relay, and installs them into /usr/local with a desktop entry and icons. A `PKGBUILD` and desktop entry live under `packaging/arch/`.
+- The Linux build no longer links `gtk-layer-shell` at build time. It is loaded at runtime (`dlopen`), so the app builds and runs on a stock Arch/GNOME install and falls back to a regular top-of-screen window when the library is absent. The .deb and .rpm now recommend it instead of depending on it.
+
 ## 0.1.8 — October 5, 2026
 
 - Coucou on iPhone: turn on Settings → General → iPhone (off by default) and your agent sessions show up live in the Coucou iPhone app and its widgets, through your own private iCloud. Project names, commands and questions are encrypted with your iCloud keys; turning it off deletes them (#209, #211, #212, #213)

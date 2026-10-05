@@ -73,11 +73,10 @@ Send newline-terminated JSON to the socket:
 
 ## Supported events
 
-All standard Claude Code hook events are supported, **except `PermissionRequest`**:
-approval cards are not yet implemented for third-party agents (only Claude Code gets
-one). A `PermissionRequest` from an external agent is answered immediately with no
-decision, so the relay writes nothing and the agent re-asks in its terminal.
-Approval support for other agents will be added with Codex support.
+All standard Claude Code hook events are supported. `PermissionRequest` gets an
+approval card from **Claude Code and Codex**, which are both first-class agents; for
+any other third-party agent it is answered immediately with no decision, so the relay
+writes nothing and the agent re-asks in its terminal.
 
 The pill lifecycle:
 
@@ -99,7 +98,12 @@ A **declared pill** is a catalog entry (`PillCatalog.swift`) that has been enabl
 
 A catalog pill that is not checked in Settings behaves like any other agent: it gets an automatic pill when a session starts, and that pill is removed when the session ends.
 
-The GitHub build exposes Gemini CLI (`agent_gemini`) and Antigravity (`agent_antigravity`) in Settings → Active pills. Cursor (`agent_cursor`) and Codex (`agent_codex`, GitHub build only) are there too — their pills can be declared and set as the main pill; session support is coming in a future version.
+The Windows and Linux builds ship a dedicated **Codex** pill (`agent_codex`), which
+is the primary agent: its pill is always present, it leads the island, and it gets
+approval cards like Claude Code. Install its hooks from **Settings → Codex → Install
+hooks**, which writes `~/.codex/hooks.json`. Gemini CLI (`agent_gemini`) and
+Antigravity (`agent_antigravity`) are exposed in Settings → Active pills on the
+macOS GitHub build; Cursor (`agent_cursor`) can be declared there too.
 
 ## Real-world examples
 
@@ -133,6 +137,23 @@ island's `tool_name` / `session_id`.
 | `PostToolUse` | `PostToolUse` |
 | `PostInvocation` | `PostToolUse` |
 | `Stop` | `Stop` |
+
+### Codex (Windows, Linux)
+
+Coucou installs its own hooks into `~/.codex/hooks.json` (or
+`$CODEX_HOME/hooks.json` when that is set) from **Settings → Codex → Install
+hooks**. Your `config.toml` is never touched, a dated backup is taken, and the diff
+is shown before anything is written.
+
+Codex asks you to review and trust new hooks once: run `/hooks` in the Codex CLI and
+approve Coucou's entry. Until then Codex skips them.
+
+The relay is the same `coucou-hook` binary, called with `--agent codex`, so Codex
+sessions land on the Codex pill. Installed events: `SessionStart`, `SessionEnd`,
+`UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PermissionRequest`, `Stop`,
+`SubagentStart`, `SubagentStop`. Codex reports shell commands as `Bash` and file
+edits as `apply_patch`; the island labels both. `PermissionRequest` shows the
+Allow / Deny card.
 
 ### Any other tool
 

@@ -3,7 +3,7 @@
 // integrations land here too in a later stage.
 
 import "./settings.css";
-import { Bridge, onEvent, type HookStatus } from "../core/bridge";
+import { Bridge, onEvent, type HookPreview, type HookStatus } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
@@ -41,37 +41,48 @@ function renderDiff(text: string): HTMLElement {
   return box;
 }
 
-// ── Claude Code section ───────────────────────────────────────────────────────
+// ── Agent hooks (Codex, Claude Code) ──────────────────────────────────────────
 
-function claudeSection(status: HookStatus): HTMLElement {
+interface HookSection {
+  title: string;
+  /** Label of the row that names the file being written. */
+  fileLabel: string;
+  installed: string;
+  notInstalled: string;
+  previewInstall: string;
+  previewRemove: string;
+  done: (backup: string) => string;
+  status: () => Promise<HookStatus | null>;
+  preview: (install: boolean) => Promise<HookPreview>;
+  apply: (install: boolean, fingerprint: string) => Promise<string>;
+  /** Extra hint lines shown under the paths. */
+  notes?: string[];
+}
+
+function hookSection(cfg: HookSection, status: HookStatus): HTMLElement {
   const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
   const section = h(
     "section",
     {},
-    h("h2", {}, statusDot(status.installed), h("span", { text: "Claude Code" })),
+    h("h2", {}, statusDot(status.installed), h("span", { text: cfg.title })),
     body,
   );
 
   const rebuild = async () => {
-    const fresh = await Bridge.hooksStatus();
+    const fresh = await cfg.status();
     if (fresh) Object.assign(status, fresh);
     clear(body);
     draw();
     const head = section.querySelector("h2")!;
     clear(head);
-    head.append(statusDot(status.installed), h("span", { text: "Claude Code" }));
+    head.append(statusDot(status.installed), h("span", { text: cfg.title }));
   };
 
   function draw() {
     body.append(
-      h("div", {
-        class: "hint",
-        text: status.installed
-          ? "Coucou is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
-          : "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing.",
-      }),
+      h("div", { class: "hint", text: status.installed ? cfg.installed : cfg.notInstalled }),
       h("div", { class: "row" },
-        h("label", { text: "settings.json" }),
+        h("label", { text: cfg.fileLabel }),
         h("span", { class: "path", text: status.settingsPath }),
       ),
       h("div", { class: "row" },
@@ -81,10 +92,14 @@ function claudeSection(status: HookStatus): HTMLElement {
       ),
     );
 
+    for (const note of cfg.notes ?? []) {
+      body.append(h("div", { class: "hint", text: note }));
+    }
+
     if (!status.hookReady) {
       body.append(h("div", {
         class: "notice warn",
-        text: "coucou-hook.exe is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
+        text: "coucou-hook is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
       }));
     }
 
@@ -95,7 +110,7 @@ function claudeSection(status: HookStatus): HTMLElement {
       onclick: () => showPreview(true),
     });
     // Writing hook commands that point at a relay which isn't there would give
-    // every Claude Code session a broken hook and nothing to show for it.
+    // every agent session a broken hook and nothing to show for it.
     if (!status.hookReady) {
       install.disabled = true;
       install.title = "The relay isn't installed yet.";
@@ -114,7 +129,7 @@ function claudeSection(status: HookStatus): HTMLElement {
   async function showPreview(install: boolean) {
     let preview;
     try {
-      preview = await Bridge.hooksPreview(install);
+      preview = await cfg.preview(install);
     } catch (err) {
       // An unreadable or invalid settings.json stops here rather than being
       // treated as empty and written over.
@@ -133,9 +148,7 @@ function claudeSection(status: HookStatus): HTMLElement {
     body.append(
       h("div", {
         class: "hint",
-        text: install
-          ? "This is exactly what will change in your settings.json. Your own hooks are left untouched."
-          : "This removes Coucou's entries only. Your own hooks are left untouched.",
+        text: install ? cfg.previewInstall : cfg.previewRemove,
       }),
       renderDiff(preview.diff),
       h("div", { class: "row" },
@@ -149,11 +162,11 @@ function claudeSection(status: HookStatus): HTMLElement {
     confirm.addEventListener("click", async () => {
       confirm.disabled = true;
       try {
-        const backup = await Bridge.hooksApply(install, preview.fingerprint);
+        const backup = await cfg.apply(install, preview.fingerprint);
         clear(body);
         body.append(h("div", {
           class: "notice ok",
-          text: `Done. Previous settings saved as ${backup}. Open a new Claude Code session to pick the hooks up.`,
+          text: cfg.done(backup),
         }));
         window.setTimeout(() => void rebuild(), 2600);
       } catch (err) {
@@ -169,6 +182,54 @@ function claudeSection(status: HookStatus): HTMLElement {
 
   draw();
   return section;
+}
+
+function claudeSection(status: HookStatus): HTMLElement {
+  return hookSection(
+    {
+      title: "Claude Code",
+      fileLabel: "settings.json",
+      installed:
+        "Coucou is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there.",
+      notInstalled:
+        "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing.",
+      previewInstall:
+        "This is exactly what will change in your settings.json. Your own hooks are left untouched.",
+      previewRemove: "This removes Coucou's entries only. Your own hooks are left untouched.",
+      done: (backup) =>
+        `Done. Previous settings saved as ${backup}. Open a new Claude Code session to pick the hooks up.`,
+      status: () => Bridge.hooksStatus(),
+      preview: (install) => Bridge.hooksPreview(install),
+      apply: (install, fingerprint) => Bridge.hooksApply(install, fingerprint),
+    },
+    status,
+  );
+}
+
+/** Codex is the primary agent: its section is shown first. */
+function codexSection(status: HookStatus): HTMLElement {
+  return hookSection(
+    {
+      title: "Codex",
+      fileLabel: "hooks.json",
+      installed:
+        "Coucou is hooked into your Codex sessions. Prompts, tool calls and permission requests show up in the island, and you can answer them there.",
+      notInstalled:
+        "Install the hooks to see your Codex sessions in the island and approve permissions without leaving what you are doing.",
+      previewInstall:
+        "This is exactly what will change in ~/.codex/hooks.json. Your own Codex hooks and config.toml are left untouched.",
+      previewRemove: "This removes Coucou's entries only. Your own Codex hooks are left untouched.",
+      done: (backup) =>
+        `Done. Previous hooks saved as ${backup}. Run /hooks once in Codex to trust the new hooks, then start a session.`,
+      notes: [
+        "Codex asks you to review and trust new hooks once: run /hooks in the Codex CLI and approve Coucou's entry.",
+      ],
+      status: () => Bridge.codexHooksStatus(),
+      preview: (install) => Bridge.codexHooksPreview(install),
+      apply: (install, fingerprint) => Bridge.codexHooksApply(install, fingerprint),
+    },
+    status,
+  );
 }
 
 // ── Claude API section ────────────────────────────────────────────────────────
@@ -428,6 +489,9 @@ async function main() {
   const status = (await Bridge.hooksStatus()) ?? {
     installed: false, settingsPath: "", hookPath: "", hookReady: false,
   };
+  const codexStatus = (await Bridge.codexHooksStatus()) ?? {
+    installed: false, settingsPath: "", hookPath: "", hookReady: false,
+  };
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
 
@@ -441,6 +505,7 @@ async function main() {
   clear(root);
   root.append(
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
+    codexSection(codexStatus),
     claudeSection(status),
     apiSection(hasKey),
     integrationsSection(present),

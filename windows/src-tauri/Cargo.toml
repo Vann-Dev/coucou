@@ -39,6 +39,10 @@ windows = { version = "0.61", features = [
 # Secret Service (GNOME Keyring, KWallet) over D-Bus, encrypted in transit.
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"] }
 libc = "0.2"
+# Loads libgtk-layer-shell at runtime instead of linking it: the island falls
+# back to a regular window when the library is absent, so the app builds and runs
+# on a stock Arch/GNOME install without the gtk-layer-shell package.
+libloading = "0.8"
 # The GTK that Tauri already runs on, to reach its window for layer-shell and
-# the input region. libgtk-layer-shell itself is called directly (platform/linux.rs).
+# the input region.
 gtk = "0.18"

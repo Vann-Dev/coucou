@@ -172,10 +172,11 @@ function buildOverview(actions: ViewActions): ViewHost {
         mode = null;
       }
 
-      // VS Code with a live Claude Code session keeps the ticker; every other
+      // Codex and Claude Code with a live session keep the ticker; every other
       // pill shows its own card, exactly like IntegrationCardView.
       const sessionActive =
-        task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
+        (task?.id === "integration_claude" || task?.id === "agent_codex") &&
+        (task.state !== "idle" || task.steps.length > 0);
 
       if (task && sessionActive) {
         if (mode !== "ticker") {
@@ -188,7 +189,7 @@ function buildOverview(actions: ViewActions): ViewHost {
         who.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
+          h("span", { class: "tool", text: agentToolLabel(task) }),
         );
         if (task.steps.length > 1) {
           who.append(h("span", {
@@ -226,8 +227,16 @@ function buildOverview(actions: ViewActions): ViewHost {
   };
 }
 
+/** The header/pill name for a first-class agent pill. */
+function agentToolLabel(task: AgentTask): string {
+  if (task.id === "agent_codex") return "Codex";
+  if (task.source === "claudeCode") return "Claude Code";
+  return "n8n";
+}
+
 function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
-  const label = task.id === "integration_claude" ? "VS Code" : task.name;
+  const label =
+    task.id === "integration_claude" ? "VS Code" : task.id === "agent_codex" ? "Codex" : task.name;
   const canvas = createMiniBot(task, 24);
   const pill = h(
     "div",

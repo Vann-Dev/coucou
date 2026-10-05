@@ -1,6 +1,7 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
 mod claude;
+mod codex;
 mod files;
 mod hooks;
 mod integrations;
@@ -49,6 +50,8 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
     let mut settings = shared.settings.lock().unwrap().clone();
     // The real state of ~/.claude/settings.json wins over whatever we stored.
     settings.hooks_installed = hooks::status().installed;
+    // Same for ~/.codex/hooks.json.
+    settings.codex_hooks_installed = codex::status().installed;
     let screen = island::screen_info(&app, &settings.screen);
     BootInfo {
         settings,
@@ -204,6 +207,38 @@ fn hooks_apply(
     let updated = {
         let mut current = shared.settings.lock().unwrap();
         current.hooks_installed = install;
+        let _ = settings::save(&current);
+        current.clone()
+    };
+    let _ = app.emit("settings-changed", updated);
+    Ok(backup)
+}
+
+// ── Codex hooks ───────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn codex_hooks_status() -> HookStatus {
+    codex::status()
+}
+
+/// Returns the diff of ~/.codex/hooks.json the user has to look at first.
+#[tauri::command]
+fn codex_hooks_preview(install: bool) -> Result<HookPreview, String> {
+    codex::preview(install)
+}
+
+/// Only ever called from an explicit click in the settings window.
+#[tauri::command]
+fn codex_hooks_apply(
+    app: AppHandle,
+    shared: State<Shared>,
+    install: bool,
+    fingerprint: String,
+) -> Result<String, String> {
+    let backup = codex::write(install, &fingerprint)?;
+    let updated = {
+        let mut current = shared.settings.lock().unwrap();
+        current.codex_hooks_installed = install;
         let _ = settings::save(&current);
         current.clone()
     };
@@ -387,6 +422,9 @@ pub fn run() {
             hooks_status,
             hooks_preview,
             hooks_apply,
+            codex_hooks_status,
+            codex_hooks_preview,
+            codex_hooks_apply,
             approval_decision,
             approval_ack,
             approval_decline,

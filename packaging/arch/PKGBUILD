@@ -1,0 +1,45 @@
+# Maintainer: Coucou contributors
+#
+# Point _fork at your fork (the one carrying the Codex-first changes). The
+# default is upstream. Builds the Tauri app in windows/ and installs the app and
+# the coucou-hook relay. gtk-layer-shell is optional: the island loads it at
+# runtime and falls back to a regular top-of-screen window when it is absent.
+
+pkgname=coucou
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="A tiny friend at the top of your screen that watches your AI coding agent sessions"
+arch=('x86_64')
+url="https://github.com/Louis-CFM/coucou"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'glib2' 'librsvg' 'openssl' 'dbus'
+         'libayatana-appindicator' 'gst-plugins-base' 'gst-plugins-good' 'xdg-utils')
+optdepends=('gtk-layer-shell: anchor the island to the top edge on KDE, Hyprland and Sway')
+makedepends=('rust' 'nodejs' 'npm' 'pkgconf' 'base-devel' 'patchelf' 'git')
+_fork="https://github.com/Louis-CFM/coucou"
+_branch="main"
+source=("$pkgname::git+$_fork.git#branch=$_branch")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname/windows"
+  # tauri.conf.json wants the release relay to exist before the app builds (see
+  # the prebuild step in package.json).
+  cargo build --release -p coucou-hook
+  npm install
+  npm run build
+  cargo build --release -p coucou
+}
+
+package() {
+  cd "$srcdir/$pkgname"
+  install -Dm755 windows/target/release/coucou      "$pkgdir/usr/bin/coucou"
+  install -Dm755 windows/target/release/coucou-hook "$pkgdir/usr/bin/coucou-hook"
+  install -Dm644 packaging/arch/coucou.desktop "$pkgdir/usr/share/applications/coucou.desktop"
+  install -Dm644 windows/src-tauri/icons/icon.png       "$pkgdir/usr/share/icons/hicolor/512x512/apps/coucou.png"
+  install -Dm644 windows/src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/coucou.png"
+  install -Dm644 windows/src-tauri/icons/128x128.png    "$pkgdir/usr/share/icons/hicolor/128x128/apps/coucou.png"
+  install -Dm644 windows/src-tauri/icons/32x32.png      "$pkgdir/usr/share/icons/hicolor/32x32/apps/coucou.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+

@@ -33,7 +33,7 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of your notch
 
 ## Features
 
-- 🤖 **Claude Code, Cursor, Codex, Gemini CLI, Antigravity and other agents, live** — see every session in your notch: what it reads, edits and runs, step by step. Tag a hook payload with `coucou_agent` to give any agent its own pill (see [`docs/AGENTS.md`](docs/AGENTS.md)). Finished? Mochi does a happy little jump.
+- 🤖 **Codex, Claude Code, Cursor, Gemini CLI, Antigravity and other agents, live** — see every session in your notch: what it reads, edits and runs, step by step. Codex is the primary agent on Windows and Linux. Tag a hook payload with `coucou_agent` to give any agent its own pill (see [`docs/AGENTS.md`](docs/AGENTS.md)). Finished? Mochi does a happy little jump.
 - See what Claude is editing, live in the notch: each file modification shows the file name and +N −M counts in the ticker, tap to read the full diff
 - ✅ **Approve and answer from the notch** — Claude Code permission requests show up with **Allow / Deny / Always**; `AskUserQuestion` prompts show the choices right in the notch (single or multi-select, up to 4 questions). One click, or "Reply in terminal" to fall back to the CLI. Codex also gets Allow / Deny.
 - 🧑‍💻 **Jump to the right terminal** — open the exact terminal window of a session *(macOS)*.
@@ -107,6 +107,7 @@ The first Linux build is out as a beta: download it from [Coucou for Linux 0.1.1
 - **AppImage** (any distribution): `chmod +x Coucou-Linux-*.AppImage`, then run it.
 - **Debian / Ubuntu**: `sudo apt install ./Coucou-Linux-*.deb`
 - **Fedora / openSUSE**: `sudo dnf install ./Coucou-Linux-*.rpm`
+- **Arch / CachyOS / EndeavourOS / Manjaro**: build and install with `./scripts/install-arch.sh`, or a `PKGBUILD` under `packaging/arch/`.
 
 Check a download with `sha256sum -c SHA256SUMS --ignore-missing`. Gemini CLI, Antigravity, Google AI, OpenAI and local model (Ollama / LM Studio) chat are macOS only for now.
 
@@ -149,12 +150,25 @@ npm install
 npm run pack                # AppImage, .deb and .rpm land in windows/release/
 ```
 
+**Arch / CachyOS / EndeavourOS / Manjaro** — one script installs the
+dependencies, builds and installs the app and the relay:
+
+```bash
+git clone https://github.com/Louis-CFM/coucou.git
+cd coucou
+./scripts/install-arch.sh
+```
+
+There is also a `PKGBUILD` under `packaging/arch/`. `gtk-layer-shell` is
+optional: the island loads it at runtime and falls back to a regular window.
+
 ## Setup
 
 Click the Coucou icon in the menu bar (macOS) or in the system tray (Windows, Linux) → **Settings…**
 
 | What | Why | Where the key goes |
 |---|---|---|
+| **Codex hooks** | live sessions and approvals — Codex is the primary agent on Windows and Linux | **Install hooks** in Settings → Codex — Coucou backs up `~/.codex/hooks.json`, merges its hooks and shows you the diff before writing anything. Run `/hooks` once in Codex to review and trust them. |
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
 | **Claude plan** *(macOS, GitHub build)* | Plan usage gauge in the notch header | **Install relay** in Settings → Agents → Plan usage, then enable "Show in the notch" |
 | **Gemini CLI hooks** *(macOS)* | Gemini CLI sessions in the island | **Install hooks** in Settings → Gemini CLI — backs up `~/.gemini/settings.json` |

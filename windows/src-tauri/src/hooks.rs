@@ -79,7 +79,7 @@ fn read_settings() -> Result<Value, String> {
 
 /// The parsing half of `read_settings`, split out so it can be tested without a
 /// home directory.
-fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
+pub(crate) fn parse_settings(bytes: &[u8], path: &str) -> Result<Value, String> {
     // PowerShell writes a UTF-8 BOM with `Set-Content -Encoding utf8`, and
     // serde_json refuses it. Stripping it is safe and well defined; guessing at
     // anything else is not.
@@ -120,11 +120,11 @@ fn hook_command(event: &str) -> String {
 /// `s` as one single-quoted shell word: `'` becomes `'\''`, nothing else is
 /// special inside single quotes.
 #[cfg(unix)]
-fn sh_quote(s: &str) -> String {
+pub(crate) fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-fn entry_is_ours(entry: &Value) -> bool {
+pub(crate) fn entry_is_ours(entry: &Value) -> bool {
     entry
         .get("hooks")
         .and_then(Value::as_array)
@@ -141,6 +141,19 @@ fn entry_is_ours(entry: &Value) -> bool {
 
 /// Settings with Coucou's hooks added; everything else is left untouched.
 fn merged(existing: &Value) -> Value {
+    merged_with(existing, HOOK_EVENTS, &hook_command)
+}
+
+/// The generic merge behind both the Claude Code and the Codex installers: adds
+/// one Coucou handler per event, replacing any Coucou handler already there and
+/// leaving every other key and every foreign hook exactly as it was. The command
+/// builder takes the event name because the two installers share one relay while
+/// tagging it with a different agent.
+pub(crate) fn merged_with(
+    existing: &Value,
+    events: &[(&str, u64)],
+    command_for: &dyn Fn(&str) -> String,
+) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     let mut hooks = root
         .get("hooks")
@@ -148,7 +161,7 @@ fn merged(existing: &Value) -> Value {
         .cloned()
         .unwrap_or_else(Map::new);
 
-    for (event, timeout) in HOOK_EVENTS {
+    for (event, timeout) in events {
         let mut list = hooks
             .get(*event)
             .and_then(Value::as_array)
@@ -158,7 +171,7 @@ fn merged(existing: &Value) -> Value {
         list.push(json!({
             "hooks": [{
                 "type": "command",
-                "command": hook_command(event),
+                "command": command_for(event),
                 "timeout": timeout,
             }]
         }));
@@ -170,7 +183,7 @@ fn merged(existing: &Value) -> Value {
 }
 
 /// Settings with every Coucou entry removed, and nothing else changed.
-fn without_ours(existing: &Value) -> Value {
+pub(crate) fn without_ours(existing: &Value) -> Value {
     let mut root = existing.as_object().cloned().unwrap_or_default();
     let Some(hooks) = root.get("hooks").and_then(Value::as_object).cloned() else {
         return Value::Object(root);
@@ -198,13 +211,13 @@ fn without_ours(existing: &Value) -> Value {
     Value::Object(root)
 }
 
-fn pretty(v: &Value) -> String {
+pub(crate) fn pretty(v: &Value) -> String {
     serde_json::to_string_pretty(v).unwrap_or_default()
 }
 
 /// Down to the second: installing then uninstalling in the same minute must not
 /// quietly overwrite the first backup.
-fn stamp() -> String {
+pub(crate) fn stamp() -> String {
     let t = platform::local_time();
     format!(
         "{:04}{:02}{:02}-{:02}{:02}{:02}",
@@ -219,7 +232,7 @@ fn backup_path() -> PathBuf {
 
 /// Identifies the exact bytes a preview was computed from. FNV-1a is plenty:
 /// the question is only "is this still the file I showed the user?".
-fn fingerprint(bytes: &[u8]) -> String {
+pub(crate) fn fingerprint(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for b in bytes {
         hash ^= *b as u64;
@@ -324,7 +337,7 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
 /// On Linux a fresh file would get the umask's 0644, and settings.json can hold
 /// API keys in its `env` block: the new file is created readable by us only,
 /// then given the original's permissions, so the rename never widens them.
-fn write_like(temp: &Path, original: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_like(temp: &Path, original: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -432,7 +445,7 @@ fn install_relay(src: &Path, dest: &Path) {
 // ── Minimal unified diff (LCS) ────────────────────────────────────────────────
 
 /// settings.json is short, so a plain O(n·m) LCS is the simplest honest diff.
-fn unified_diff(before: &str, after: &str) -> String {
+pub(crate) fn unified_diff(before: &str, after: &str) -> String {
     let a: Vec<&str> = before.lines().collect();
     let b: Vec<&str> = after.lines().collect();
     let (n, m) = (a.len(), b.len());

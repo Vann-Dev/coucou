@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Coucou
+GenericName=AI agent companion
+Comment=Mochi watches your AI coding agent sessions from the top of your screen
+Exec=coucou
+Icon=coucou
+Terminal=false
+Categories=Utility;Development;
+Keywords=codex;claude;agent;notch;island;
+StartupNotify=false
+

@@ -73,6 +73,18 @@ export const Bridge = {
   hooksApply: (install: boolean, fingerprint: string) =>
     callOrThrow<string>("hooks_apply", { install, fingerprint }),
 
+  // ── Codex hooks ───────────────────────────────────────────────────────────
+  codexHooksStatus: () => call<HookStatus>("codex_hooks_status"),
+  /** Diff of ~/.codex/hooks.json before anything is written. */
+  codexHooksPreview: (install: boolean) =>
+    callOrThrow<HookPreview>("codex_hooks_preview", { install }),
+  /**
+   * Writes ~/.codex/hooks.json — only after an explicit click, and only when the
+   * file still matches the preview the user looked at.
+   */
+  codexHooksApply: (install: boolean, fingerprint: string) =>
+    callOrThrow<string>("codex_hooks_apply", { install, fingerprint }),
+
   approvalDecision: (requestId: string, decision: "allow" | "deny") =>
     call<void>("approval_decision", { requestId, decision }),
   /** "The card is up" — until this lands the relay only waits a moment. */

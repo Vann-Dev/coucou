@@ -9,6 +9,9 @@ import { State } from "../core/state";
 import type { Island } from "./island";
 
 const CLAUDE_ID = "integration_claude";
+const CODEX_ID = "agent_codex";
+/** The agent tag Coucou's Codex hooks carry. */
+const CODEX_AGENT = "codex";
 
 /** Clears the approval card if no decision was made before the hook gave up. */
 let pendingTimeout: number | null = null;
@@ -76,6 +79,9 @@ const TOOL_LABELS: Record<string, string> = {
   MultiEdit: "Modifie",
   NotebookEdit: "Notebook",
   PowerShell: "Exécute",
+  apply_patch: "Modifie",
+  update_plan: "Plan",
+  spawn_agent: "Agent",
 };
 
 function stepLabel(tool: string, input: Record<string, unknown>): string {
@@ -114,25 +120,31 @@ function approvalTarget(tool: string, input: Record<string, unknown>): string {
   for (const field of APPROVAL_FIELDS) {
     const value = input[field];
     if (typeof value === "string" && value.trim()) {
-      return `${tool} · ${value.trim()}`;
+      const trimmed = value.trim();
+      return `${tool} · ${trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed}`;
     }
   }
   return tool;
 }
 
-function upsert(projectName: string, cwd: string) {
-  const t = State.tasks.find((x) => x.id === CLAUDE_ID);
+function upsert(id: string, projectName: string, cwd: string) {
+  const t = State.tasks.find((x) => x.id === id);
   if (!t) return;
   t.name = projectName;
   if (cwd) t.sessionCwd = cwd;
 }
 
-function clearSession() {
-  const t = State.tasks.find((x) => x.id === CLAUDE_ID);
+/** Idle name for a first-class agent pill (a session renames it to its project). */
+function homeName(id: string): string {
+  return id === CODEX_ID ? "Codex" : "VS Code";
+}
+
+function clearSession(id: string) {
+  const t = State.tasks.find((x) => x.id === id);
   if (!t) return;
   t.steps = [];
   t.stepIndex = 0;
-  t.name = "VS Code";
+  t.name = homeName(id);
   t.pillBadge = null;
 }
 
@@ -154,11 +166,13 @@ function handleHook(island: Island, payload: HookPayload) {
   const raw = lastPathComponent(cwd);
   const projectName = aliasProjectName(raw || "Session");
 
-  // Route to the right pill. Valid coucou_agent → dynamic "agent_<name>" pill.
-  // "claude" is reserved; absent or invalid → Claude Code pill unchanged.
+  // Route to the right pill. `codex` is first-class: a permanent pill that also
+  // gets approval cards. Any other valid coucou_agent → a dynamic agent_ pill.
+  // "claude" is reserved; absent or invalid → the Claude Code pill.
   const validAgent = validateAgent(payload.coucou_agent);
-  const agentId = validAgent ? `agent_${validAgent}` : CLAUDE_ID;
-  const isExternalAgent = validAgent !== null;
+  const isCodex = validAgent === CODEX_AGENT;
+  const agentId = validAgent ? (isCodex ? CODEX_ID : `agent_${validAgent}`) : CLAUDE_ID;
+  const isExternalAgent = validAgent !== null && !isCodex;
 
   const focused = State.focusId === agentId;
 
@@ -178,7 +192,8 @@ function handleHook(island: Island, payload: HookPayload) {
     if (isExternalAgent) {
       State.upsertExternalAgent(agentId, validAgent!, agentColor(validAgent!));
     } else {
-      upsert(projectName, cwd);
+      // Codex and Claude Code are permanent pills; only their project name moves.
+      upsert(agentId, projectName, cwd);
     }
   };
 
@@ -258,7 +273,7 @@ function handleHook(island: Island, payload: HookPayload) {
         State.removeTask(agentId);
       } else {
         State.updateTask(agentId, "idle");
-        clearSession();
+        clearSession(agentId);
       }
       break;
 
@@ -271,9 +286,9 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
 
     case "PermissionRequest": {
-      // External agents do not get an approval card — showing one would look like
-      // a Claude Code request. Decline immediately so the agent re-asks in its
-      // terminal. Approval support for other agents will come with Codex support.
+      // Third-party agents do not get an approval card — showing one would look
+      // like a Claude Code request. Decline immediately so the agent re-asks in
+      // its terminal. Codex is first-class and gets the card below.
       if (isExternalAgent) {
         if (payload.request_id) void Bridge.approvalDecline(payload.request_id);
         break;
@@ -287,7 +302,7 @@ function handleHook(island: Island, payload: HookPayload) {
         if (requestId) void Bridge.approvalDecline(requestId);
         break;
       }
-      upsert(projectName, cwd);
+      upsert(agentId, projectName, cwd);
       if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
       const tool = payload.tool_name ?? "Tool";
       const input = payload.tool_input ?? {};
@@ -296,11 +311,12 @@ function handleHook(island: Island, payload: HookPayload) {
         sessionId: payload.session_id ?? "",
         tool,
         command: approvalTarget(tool, input),
+        agentId,
       };
       // The relay's short ack window closes in 800 ms; everything below this
       // line is synchronous, so the card really is up by the time it lands.
       if (requestId) void Bridge.approvalAck(requestId);
-      State.updateTask(CLAUDE_ID, "approval");
+      State.updateTask(agentId, "approval");
       State.isPinned = true;
       Sound.play("approval");
       if (focused) {
@@ -309,7 +325,7 @@ function handleHook(island: Island, payload: HookPayload) {
         // Another agent holds the view, so the card would yank it away. The badge
         // is the signal instead — but it has to be on screen for that to mean
         // anything, hence the reveal. We just told the relay a human can act.
-        State.setPillBadge(CLAUDE_ID, "approval");
+        State.setPillBadge(agentId, "approval");
         island.reveal();
       }
       // Coucou answers within 108 s or not at all; after that the terminal has
@@ -320,8 +336,8 @@ function handleHook(island: Island, payload: HookPayload) {
         State.pendingApproval = null;
         State.isPinned = false;
         island.dropPin();
-        State.updateTask(CLAUDE_ID, "working");
-        State.setPillBadge(CLAUDE_ID, null);
+        State.updateTask(agentId, "working");
+        State.setPillBadge(agentId, null);
         if (State.view === "approval") island.setView(State.defaultView());
         State.notify();
       }, 110_000);

@@ -162,25 +162,64 @@ pub fn left_button_down() -> bool {
 
 // ── Island window ─────────────────────────────────────────────────────────────
 
-/// The few gtk-layer-shell calls we need, straight from the C library.
+/// The few gtk-layer-shell calls we need, loaded at runtime.
 mod layer {
     use gtk::ffi::GtkWindow;
     use std::os::raw::{c_char, c_int};
+    use std::sync::OnceLock;
 
     pub const LAYER_OVERLAY: c_int = 3;
     pub const EDGE_TOP: c_int = 2;
     pub const KEYBOARD_NONE: c_int = 0;
     pub const KEYBOARD_ON_DEMAND: c_int = 2;
 
-    #[link(name = "gtk-layer-shell")]
-    extern "C" {
-        pub fn gtk_layer_is_supported() -> c_int;
-        pub fn gtk_layer_init_for_window(window: *mut GtkWindow);
-        pub fn gtk_layer_set_namespace(window: *mut GtkWindow, name_space: *const c_char);
-        pub fn gtk_layer_set_layer(window: *mut GtkWindow, layer: c_int);
-        pub fn gtk_layer_set_anchor(window: *mut GtkWindow, edge: c_int, anchor: c_int);
-        pub fn gtk_layer_set_exclusive_zone(window: *mut GtkWindow, zone: c_int);
-        pub fn gtk_layer_set_keyboard_mode(window: *mut GtkWindow, mode: c_int);
+    type IsSupported = unsafe extern "C" fn() -> c_int;
+    type InitForWindow = unsafe extern "C" fn(*mut GtkWindow);
+    type SetNamespace = unsafe extern "C" fn(*mut GtkWindow, *const c_char);
+    type SetLayer = unsafe extern "C" fn(*mut GtkWindow, c_int);
+    type SetAnchor = unsafe extern "C" fn(*mut GtkWindow, c_int, c_int);
+    type SetExclusiveZone = unsafe extern "C" fn(*mut GtkWindow, c_int);
+    type SetKeyboardMode = unsafe extern "C" fn(*mut GtkWindow, c_int);
+
+    /// libgtk-layer-shell, dlopen'd instead of linked.
+    ///
+    /// A hard link makes the whole app refuse to build and start without the
+    /// development package — the one dependency a stock GNOME/X11 Arch desktop is
+    /// most likely to be missing. Loading it at runtime means the island simply
+    /// falls back to a regular window when the library is absent, exactly as it
+    /// already does when the compositor has no layer-shell.
+    pub struct Layer {
+        pub is_supported: IsSupported,
+        pub init_for_window: InitForWindow,
+        pub set_namespace: SetNamespace,
+        pub set_layer: SetLayer,
+        pub set_anchor: SetAnchor,
+        pub set_exclusive_zone: SetExclusiveZone,
+        pub set_keyboard_mode: SetKeyboardMode,
+        // Keeps the library mapped for the life of the process.
+        _lib: libloading::Library,
+    }
+
+    /// The loaded library, or None when it is not installed. Loaded once.
+    pub fn instance() -> Option<&'static Layer> {
+        static INSTANCE: OnceLock<Option<Layer>> = OnceLock::new();
+        INSTANCE
+            .get_or_init(|| unsafe {
+                let lib = libloading::Library::new("libgtk-layer-shell.so.0")
+                    .or_else(|_| libloading::Library::new("libgtk-layer-shell.so"))
+                    .ok()?;
+                Some(Layer {
+                    is_supported: *lib.get(b"gtk_layer_is_supported\0").ok()?,
+                    init_for_window: *lib.get(b"gtk_layer_init_for_window\0").ok()?,
+                    set_namespace: *lib.get(b"gtk_layer_set_namespace\0").ok()?,
+                    set_layer: *lib.get(b"gtk_layer_set_layer\0").ok()?,
+                    set_anchor: *lib.get(b"gtk_layer_set_anchor\0").ok()?,
+                    set_exclusive_zone: *lib.get(b"gtk_layer_set_exclusive_zone\0").ok()?,
+                    set_keyboard_mode: *lib.get(b"gtk_layer_set_keyboard_mode\0").ok()?,
+                    _lib: lib,
+                })
+            })
+            .as_ref()
     }
 }
 
@@ -212,19 +251,25 @@ pub fn make_non_activating(win: &WebviewWindow) {
     let Ok(gw) = win.gtk_window() else { return };
     // COUCOU_LAYER_SHELL=0 is the way out on a compositor where it misbehaves.
     let wanted = std::env::var("COUCOU_LAYER_SHELL").map(|v| v != "0").unwrap_or(true);
-    let supported = unsafe { layer::gtk_layer_is_supported() } != 0;
-    if !wanted || !supported || gw.is_realized() {
-        let why = if !wanted {
-            "COUCOU_LAYER_SHELL=0"
-        } else if supported {
-            "window already shown"
-        } else {
-            "compositor has no layer-shell"
-        };
-        crate::log::line(format!("island is a regular window ({why})"));
-        gw.set_accept_focus(false);
-        return;
-    }
+    let load = layer::instance();
+    let supported = load.map(|l| unsafe { (l.is_supported)() } != 0).unwrap_or(false);
+    let lib = match load {
+        Some(l) if wanted && !gw.is_realized() && supported => l,
+        _ => {
+            let why = if !wanted {
+                "COUCOU_LAYER_SHELL=0"
+            } else if load.is_none() {
+                "gtk-layer-shell not installed"
+            } else if gw.is_realized() {
+                "window already shown"
+            } else {
+                "compositor has no layer-shell"
+            };
+            crate::log::line(format!("island is a regular window ({why})"));
+            gw.set_accept_focus(false);
+            return;
+        }
+    };
     // tao gives undecorated Wayland windows an empty titlebar to force
     // client-side decorations. A layer surface has none, and a client-decorated
     // GtkWindow recomputes its own input region (shadow margins included) on
@@ -232,15 +277,15 @@ pub fn make_non_activating(win: &WebviewWindow) {
     gw.set_titlebar(None::<&gtk::Widget>);
     let ptr = gtk_window_ptr(&gw);
     unsafe {
-        layer::gtk_layer_init_for_window(ptr);
-        layer::gtk_layer_set_namespace(ptr, c"coucou".as_ptr());
-        layer::gtk_layer_set_layer(ptr, layer::LAYER_OVERLAY);
+        (lib.init_for_window)(ptr);
+        (lib.set_namespace)(ptr, c"coucou".as_ptr());
+        (lib.set_layer)(ptr, layer::LAYER_OVERLAY);
         // Top edge only: the compositor centres the surface horizontally.
-        layer::gtk_layer_set_anchor(ptr, layer::EDGE_TOP, 1);
+        (lib.set_anchor)(ptr, layer::EDGE_TOP, 1);
         // -1: sit right against the screen edge, over any top panel, the way
         // the Mac island sits in the notch.
-        layer::gtk_layer_set_exclusive_zone(ptr, -1);
-        layer::gtk_layer_set_keyboard_mode(ptr, layer::KEYBOARD_NONE);
+        (lib.set_exclusive_zone)(ptr, -1);
+        (lib.set_keyboard_mode)(ptr, layer::KEYBOARD_NONE);
     }
     // WebKitGTK in a freshly mapped layer surface never paints its first frame
     // (seen on COSMIC, and reproduced with a bare GTK window + WebKitGTK, no
@@ -271,8 +316,10 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
     // refuses focus until we say otherwise — on a layer surface too.
     gw.set_accept_focus(activating);
     if LAYER_SURFACE.load(Ordering::Relaxed) {
-        let mode = if activating { layer::KEYBOARD_ON_DEMAND } else { layer::KEYBOARD_NONE };
-        unsafe { layer::gtk_layer_set_keyboard_mode(gtk_window_ptr(&gw), mode) };
+        if let Some(lib) = layer::instance() {
+            let mode = if activating { layer::KEYBOARD_ON_DEMAND } else { layer::KEYBOARD_NONE };
+            unsafe { (lib.set_keyboard_mode)(gtk_window_ptr(&gw), mode) };
+        }
     }
 }
 

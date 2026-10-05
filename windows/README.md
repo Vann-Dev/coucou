@@ -6,7 +6,7 @@
 
 **Mochi doesn't get a notch on a PC — so it lives at the top of your screen instead.**
 
-Approve Claude Code permissions, watch your session work, drop a file, chat with Claude, keep an eye on your services — without leaving what you're doing.
+Approve Codex and Claude Code permissions, watch your session work, drop a file, chat with an AI, keep an eye on your services — without leaving what you're doing.
 
 ![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows)
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
@@ -67,6 +67,24 @@ never blocked or slowed down by Coucou.** If nobody answers a permission request
 in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
 
 It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
+
+## Codex
+
+Codex is the primary agent. Open **Settings… → Codex → Install hooks…**: you get
+the exact diff of what will change in `~/.codex/hooks.json` (or
+`$CODEX_HOME/hooks.json`), the path of the dated backup that will be taken, and
+nothing is written until you click. Your `config.toml` and your own hooks are
+never touched, and uninstalling removes only Coucou's entries.
+
+Codex asks you to review and trust new hooks once — run `/hooks` in the Codex CLI
+and approve Coucou's entry. Until then Codex skips them.
+
+The relay is the same `coucou-hook` binary, called with `--agent codex`. A Codex
+permission request opens the island with **Deny / Allow**, and a finished session
+shows what it did. As with Claude Code, if Coucou is closed the hook exits
+immediately and the session is never blocked.
+
+Claude Code still works exactly as before, from **Settings… → Claude Code**.
 
 ## Chat and keys
 
@@ -152,11 +170,37 @@ problems. It stays on your machine.
 The same app builds for Linux: everything that differs lives in
 `src-tauri/src/platform/`, and the relay's transport in `hook/src/unix.rs`.
 
+**Debian / Ubuntu**
+
 ```bash
 sudo apt install build-essential pkg-config \
   libwebkit2gtk-4.1-dev libgtk-layer-shell-dev libayatana-appindicator3-dev \
   librsvg2-dev libssl-dev libdbus-1-dev patchelf \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+```
+
+**Arch / CachyOS / EndeavourOS / Manjaro** — one script installs the
+dependencies, builds and installs:
+
+```bash
+./scripts/install-arch.sh
+```
+
+or by hand:
+
+```bash
+sudo pacman -S --needed base-devel pkgconf rust nodejs npm \
+  webkit2gtk-4.1 gtk3 glib2 librsvg openssl dbus libayatana-appindicator \
+  patchelf xdg-utils gst-plugins-base gst-plugins-good gtk-layer-shell
+```
+
+`gtk-layer-shell` is optional: the island loads it at runtime and falls back to a
+regular always-on-top window when it is missing. There is also an Arch
+`PKGBUILD` under `packaging/arch/`.
+
+Then, on any distribution:
+
+```bash
 npm install
 npm run tauri dev      # live-reloading development build
 npm run pack           # AppImage, .deb and .rpm in windows/release/
@@ -167,7 +211,9 @@ What changes on Linux:
 - **The island** is a gtk-layer-shell overlay anchored to the top edge, over any
   top panel, on compositors that support it: COSMIC, KDE Plasma, Hyprland, Sway
   and other wlroots compositors. GNOME has no layer-shell, so there the island
-  is a regular window. `COUCOU_LAYER_SHELL=0` forces that mode anywhere.
+  is a regular window. `COUCOU_LAYER_SHELL=0` forces that mode anywhere. If
+  `gtk-layer-shell` is not installed at all, the island is a regular window
+  everywhere.
 - **Click-through** is the window's input region, kept equal to the island
   shape, so the compositor sends every other click to what is underneath.
 - **Mochi's eyes** follow the pointer only while it is over the island: Wayland

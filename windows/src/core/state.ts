@@ -26,6 +26,8 @@ export interface ApprovalInfo {
   sessionId: string;
   tool: string;
   command: string;
+  /** Which pill the request belongs to, so Allow/Deny resets the right one. */
+  agentId: string;
 }
 
 export interface ChatMessage {
@@ -56,8 +58,13 @@ const task = (
   id, name, color, state: "idle", stepIndex: 0, steps: [], source, isIntegration: true,
 });
 
+/** The Codex pill. Codex is the primary agent: its pill is permanent. */
+export const CODEX_ID = "agent_codex";
+
 /** AgentTask.integrationAgents — same ids, names and colours as macOS. */
 export const INTEGRATION_AGENTS: AgentTask[] = [
+  // Codex leads: it is the primary agent, always present and always first.
+  task(CODEX_ID, "Codex", "#2DD4BF", "agent"),
   task("integration_claude", "VS Code", "#F5F6F8", "claudeCode"),
   task("integration_resend", "Resend", "#22C55E", "n8n"),
   task("integration_n8n", "n8n", "#F29B38", "n8n"),
@@ -90,6 +97,8 @@ export interface Settings {
   screen: "primary" | "cursor";
   autostart: boolean;
   hooksInstalled: boolean;
+  /** Whether Coucou's hooks are installed into ~/.codex/hooks.json. */
+  codexHooksInstalled: boolean;
   /** Claude model used by the chat. */
   model: string;
 }
@@ -105,6 +114,7 @@ export const DEFAULT_SETTINGS: Settings = {
   screen: "primary",
   autostart: false,
   hooksInstalled: false,
+  codexHooksInstalled: false,
   model: "claude-opus-5",
 };
 
@@ -199,32 +209,30 @@ class AppState {
     this.notify();
   }
 
-  /** loadIntegrationTasks() — VS Code always on, the rest opt-in (max 4). */
+  /** loadIntegrationTasks() — Codex and Claude Code always on, the rest opt-in (max 4). */
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
-      const shouldLoad =
-        proto.id === "integration_claude" || this.settings.activeIntegrations.includes(proto.id);
+      const alwaysOn = proto.id === CODEX_ID || proto.id === "integration_claude";
+      const shouldLoad = alwaysOn || this.settings.activeIntegrations.includes(proto.id);
       const idx = this.tasks.findIndex((t) => t.id === proto.id);
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);
     }
-    // Order: integration_claude first, then agent_* pills (visible in slice(0,4)),
-    // then other integrations in declaration order.
+    // Order: Codex first (the primary agent), then Claude Code, then agent_*
+    // pills (visible in slice(0, 4)), then the other integrations in
+    // declaration order.
     const order = INTEGRATION_AGENTS.map((t) => t.id);
+    const rank = (id: string) =>
+      id === CODEX_ID ? 0 : id === "integration_claude" ? 1 : id.startsWith("agent_") ? 2 : 3;
     this.tasks.sort((a, b) => {
-      const isAgentA = a.id.startsWith("agent_");
-      const isAgentB = b.id.startsWith("agent_");
-      // integration_claude always first
-      if (a.id === "integration_claude") return -1;
-      if (b.id === "integration_claude") return 1;
-      // agent_* before other integrations; preserve insertion order among themselves
-      if (isAgentA && !isAgentB) return -1;
-      if (isAgentB && !isAgentA) return 1;
-      if (isAgentA && isAgentB) return 0;
-      // both known integrations → declaration order
+      const ra = rank(a.id);
+      const rb = rank(b.id);
+      if (ra !== rb) return ra - rb;
+      // agent_* pills keep their insertion order among themselves
+      if (ra === 2) return 0;
       return order.indexOf(a.id) - order.indexOf(b.id);
     });
-    if (!this.focusId) this.focusId = "integration_claude";
+    if (!this.focusId) this.focusId = CODEX_ID;
     this.notify();
   }
 
@@ -232,7 +240,7 @@ class AppState {
     const idx = this.tasks.findIndex((t) => t.id === id);
     if (idx < 0) return;
     this.tasks.splice(idx, 1);
-    if (this.focusId === id) this.focusId = this.tasks[0]?.id ?? "integration_claude";
+    if (this.focusId === id) this.focusId = this.tasks[0]?.id ?? CODEX_ID;
     this.notify();
   }
 
@@ -251,11 +259,11 @@ class AppState {
   }
 
   toggleIntegration(id: string) {
-    if (id === "integration_claude") return;
+    if (id === "integration_claude" || id === CODEX_ID) return;
     const active = this.settings.activeIntegrations;
     if (active.includes(id)) {
       this.settings.activeIntegrations = active.filter((x) => x !== id);
-      if (this.focusId === id) this.focusId = "integration_claude";
+      if (this.focusId === id) this.focusId = CODEX_ID;
     } else {
       if (active.length >= 4) return;
       this.settings.activeIntegrations = [...active, id];

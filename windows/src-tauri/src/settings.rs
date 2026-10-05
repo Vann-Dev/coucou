@@ -16,6 +16,11 @@ pub struct Settings {
     pub screen: String,
     pub autostart: bool,
     pub hooks_installed: bool,
+    /// Whether Coucou's hooks are installed into ~/.codex/hooks.json (the Codex
+    /// CLI reads its own hooks there). Defaulted so a settings.json written by an
+    /// older build still loads.
+    #[serde(default)]
+    pub codex_hooks_installed: bool,
     /// Claude model used by the chat. Changeable in the settings window.
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
@@ -42,6 +47,7 @@ impl Default for Settings {
             screen: "primary".into(),
             autostart: false,
             hooks_installed: false,
+            codex_hooks_installed: false,
             model: default_model(),
         }
     }

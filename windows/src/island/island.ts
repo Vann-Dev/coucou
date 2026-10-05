@@ -565,9 +565,14 @@ export class Island {
    */
   followPageCursor() {
     window.addEventListener("mousemove", (e) => this.onCursor(e.clientX, e.clientY));
+    // Belt and braces alongside the GDK crossings Rust forwards: some WebKitGTK
+    // builds only report a leave through one of these.
+    const left = () => this.onPointerCrossing(false);
     window.addEventListener("mouseout", (e) => {
-      if (e.relatedTarget == null) this.onCursor(-10_000, -10_000);
+      if (e.relatedTarget == null) left();
     });
+    document.addEventListener("mouseleave", left);
+    document.addEventListener("pointerleave", left);
   }
 
   /** Cursor in window-logical coordinates. */
@@ -612,6 +617,28 @@ export class Island {
       }
     }
 
+    this.ensureRunning();
+  }
+
+  /**
+   * The pointer entered or left the island window, reported by Rust from the
+   * window's GDK crossing events. Wayland has no global cursor, and WebKitGTK's
+   * DOM leave is unreliable on a layer surface, so this is the signal that
+   * closes the island when the pointer moves away.
+   */
+  onPointerCrossing(inside: boolean) {
+    if (inside === this.wasInIsland) return;
+    this.wasInIsland = inside;
+    if (inside) {
+      if (this.fsm.state === "coucou") this.greeting.hover();
+      this.fsm.mouseEntered();
+      this.homeCollapseAt = null;
+    } else {
+      this.fsm.mouseLeft();
+      if (this.fsm.state === "home" && !State.isPinned) {
+        this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
+      }
+    }
     this.ensureRunning();
   }
 

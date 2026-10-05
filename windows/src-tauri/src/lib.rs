@@ -448,6 +448,8 @@ pub fn run() {
 
             if let Some(win) = island::window(&handle) {
                 platform::make_non_activating(&win);
+                // Window enter/leave crossings — the only cursor signal on Linux.
+                platform::watch_pointer(&win, handle.clone());
                 island::apply_geometry(&handle, &loaded.screen, false);
                 let _ = win.show();
             }

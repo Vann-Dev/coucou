@@ -18,7 +18,7 @@ use std::sync::Mutex;
 
 use gtk::glib::translate::ToGlibPtr;
 use gtk::prelude::*;
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Emitter, WebviewWindow};
 
 use super::{home_dir, LocalTime};
 
@@ -306,6 +306,37 @@ pub fn make_non_activating(win: &WebviewWindow) {
     });
     LAYER_SURFACE.store(true, Ordering::Relaxed);
     crate::log::line("island is a layer-shell overlay");
+}
+
+/// GTK tells us when the pointer enters or leaves the island window.
+///
+/// Wayland gives no application the global cursor position, so the page learns
+/// about the pointer only from events on its own surface — and WebKitGTK does not
+/// reliably deliver a DOM `mouseout` when the pointer leaves a layer-shell
+/// surface, which left the island open forever. This GDK crossing event does
+/// fire, so the page is told directly.
+///
+/// Crossings to or from the WebKit child inside the window are not real entries
+/// or exits and are ignored. Because the window's input region is the island
+/// shape, "inside the window" and "over the island" are the same thing here.
+pub fn watch_pointer(win: &WebviewWindow, app: AppHandle) {
+    let Ok(gw) = win.gtk_window() else { return };
+    fn real(event: &gtk::gdk::EventCrossing) -> bool {
+        event.detail() != gtk::gdk::NotifyType::Inferior
+    }
+    let enter = app.clone();
+    gw.connect_enter_notify_event(move |_, event| {
+        if real(event) {
+            let _ = enter.emit_to(crate::island::WINDOW_LABEL, "pointer", true);
+        }
+        gtk::glib::Propagation::Proceed
+    });
+    gw.connect_leave_notify_event(move |_, event| {
+        if real(event) {
+            let _ = app.emit_to(crate::island::WINDOW_LABEL, "pointer", false);
+        }
+        gtk::glib::Propagation::Proceed
+    });
 }
 
 /// Temporarily allow keyboard focus so a text field inside the island can be

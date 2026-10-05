@@ -25,6 +25,8 @@ async function main() {
   if (boot && !boot.cursorPoll) island.followPageCursor();
 
   await onEvent<{ x: number; y: number }>("cursor", ({ x, y }) => island.onCursor(x, y));
+  // Window enter/leave crossings from Rust (Linux), where there is no cursor poll.
+  await onEvent<boolean>("pointer", (inside) => island.onPointerCrossing(inside));
 
   /** Pause has to reach Rust too, or the pollers keep calling out. */
   const setPaused = (on: boolean) => {

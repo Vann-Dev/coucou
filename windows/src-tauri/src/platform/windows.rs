@@ -233,3 +233,7 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
 
 /// Click-through here is the poll's WS_EX_TRANSPARENT toggle, not a region.
 pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)>) {}
+
+/// No-op on Windows: the island reads the global cursor from the Win32 poll,
+/// which already reports when the pointer leaves it.
+pub fn watch_pointer(_win: &WebviewWindow, _app: AppHandle) {}

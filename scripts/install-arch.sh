@@ -28,6 +28,14 @@ command -v pacman >/dev/null || die "this script is for Arch-based systems (pacm
 [ -f "$WIN/src-tauri/Cargo.toml" ] || die "run this from the coucou repository"
 
 if [ "${1:-}" != "--no-deps" ]; then
+  # A repository listed in pacman.conf whose database has never been downloaded
+  # makes every "pacman -S" fail with "could not find database". The Codex
+  # desktop app auto-adds one such repository (openai-chatgpt), so refresh the
+  # databases first.
+  say "Refreshing pacman databases"
+  sudo pacman -Sy --noconfirm ||
+    say "Warning: a repository could not be refreshed - check the entries in /etc/pacman.conf"
+
   say "Installing build and runtime dependencies"
   sudo pacman -S --needed --noconfirm "${DEPS[@]}"
   # Optional: the island loads gtk-layer-shell at runtime and falls back to a
@@ -67,4 +75,3 @@ echo "  3. Run /hooks once in Codex to review and trust the hooks"
 echo "  4. Start a Codex session - Mochi appears at the top of your screen"
 echo
 echo "Claude Code hooks are still available under Settings... > Claude Code."
-

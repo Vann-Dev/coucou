@@ -13,9 +13,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WIN="$ROOT/windows"
 
-# Hard build/runtime dependencies.
+# Hard build/runtime dependencies. Rust is handled separately below: pacman's
+# "rust" package conflicts with rustup, which many Arch developers use.
 DEPS=(
-  base-devel pkgconf rust nodejs npm
+  base-devel pkgconf nodejs npm
   webkit2gtk-4.1 gtk3 glib2 librsvg openssl dbus
   libayatana-appindicator patchelf xdg-utils
   gst-plugins-base gst-plugins-good
@@ -38,6 +39,16 @@ if [ "${1:-}" != "--no-deps" ]; then
 
   say "Installing build and runtime dependencies"
   sudo pacman -S --needed --noconfirm "${DEPS[@]}"
+
+  # Use the Rust toolchain that is already here. pacman's "rust" package
+  # conflicts with rustup, so it is only pulled in when no cargo is on PATH.
+  if command -v cargo >/dev/null 2>&1; then
+    say "Using the Rust toolchain already on PATH: $(cargo --version)"
+  else
+    say "No Rust toolchain found - installing rust from pacman"
+    sudo pacman -S --needed --noconfirm rust
+  fi
+
   # Optional: the island loads gtk-layer-shell at runtime and falls back to a
   # regular always-on-top window when it is missing, so this is not fatal.
   say "Optional: gtk-layer-shell (top-edge overlay on KDE, Hyprland, Sway)"

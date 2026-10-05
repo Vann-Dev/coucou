@@ -23,12 +23,11 @@ sha256sums=('SKIP')
 
 build() {
   cd "$srcdir/$pkgname/windows"
-  # tauri.conf.json wants the release relay to exist before the app builds (see
-  # the prebuild step in package.json).
-  cargo build --release -p coucou-hook
   npm install
-  npm run build
-  cargo build --release -p coucou
+  # Through the Tauri CLI: it enables the "custom-protocol" feature that makes a
+  # production binary, builds the coucou-hook relay and the front end first
+  # (beforeBuildCommand), and writes target/release/coucou.
+  npm run tauri -- build --no-bundle
 }
 
 package() {
@@ -42,4 +41,3 @@ package() {
   install -Dm644 windows/src-tauri/icons/32x32.png      "$pkgdir/usr/share/icons/hicolor/32x32/apps/coucou.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
-

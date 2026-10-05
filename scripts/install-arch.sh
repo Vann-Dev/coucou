@@ -56,14 +56,15 @@ if [ "${1:-}" != "--no-deps" ]; then
     say "gtk-layer-shell not installed - the island will be a regular window"
 fi
 
-say "Building the coucou-hook relay"
-( cd "$WIN" && cargo build --release -p coucou-hook )
-
-say "Building the front end"
-( cd "$WIN" && { [ -d node_modules ] || npm install; } && npm run build )
+say "Installing front-end dependencies"
+( cd "$WIN" && { [ -d node_modules ] || npm install; } )
 
 say "Building Coucou"
-( cd "$WIN" && cargo build --release -p coucou )
+# Through the Tauri CLI, which enables the "custom-protocol" feature that makes a
+# production binary. A plain "cargo build --release" produces a dev build whose
+# windows point at the dev server (http://localhost:1420) and never load. The
+# CLI builds the coucou-hook relay and the front end first (beforeBuildCommand).
+( cd "$WIN" && npm run tauri -- build --no-bundle )
 
 say "Installing into /usr/local"
 sudo install -Dm755 "$WIN/target/release/coucou"      /usr/local/bin/coucou
